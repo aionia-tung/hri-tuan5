@@ -6,3 +6,8 @@ __pycache__/
 .pytest_cache/
 *.bag
 *.db3
+*.pt
+
+# Bao cao bai 05 nop rieng
+report/Bao_cao_Thuc_hanh_05.pdf
+report/images/

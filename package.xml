@@ -2,7 +2,7 @@
 <package format="3">
   <name>tb4_maps</name>
   <version>0.0.1</version>
-  <description>TurtleBot 4 simulation, SLAM mapping, AMCL localization and Nav2 navigation practice package.</description>
+  <description>TurtleBot 4 simulation, SLAM mapping, AMCL localization, Nav2 goal navigation and YOLO object detection practice package.</description>
   <maintainer email="student@example.com">Student</maintainer>
   <license>MIT</license>
 
@@ -12,6 +12,16 @@
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_ign_gazebo</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

@@ -1,0 +1,16 @@
+yolo_detector:
+  ros__parameters:
+    image_topic: /oakd/rgb/preview/image_raw
+    annotated_topic: /yolo/image_annotated
+    detections_topic: /yolo/detections
+    model: yolov8n.pt          # tu dong tai ve weights_dir lan dau; co the doi yolo11n.pt
+    weights_dir: ~/.cache/tb4_maps
+    confidence: 0.35
+    imgsz: 640                 # anh camera mo phong 320x240, phong to giup bat vat nho
+    device: cpu
+    max_rate_hz: 5.0           # so frame suy luan toi da moi giay
+    num_threads: 2             # gioi han thread torch, chua CPU cho Gazebo + Nav2
+    show_window: true          # cua so OpenCV "YOLO - TurtleBot 4"
+    log_period_sec: 1.0        # chu ky in ket qua ra terminal
+    save_dir: ""               # vd: /home/aionia/tb4_maps/report/images/yolo
+    save_period_sec: 5.0

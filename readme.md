@@ -1,7 +1,13 @@
-# Bai Thuc Hanh 04 - TurtleBot 4 Simulation, SLAM va Nav2
+# Bai Thuc Hanh 05 - TurtleBot 4 Localization, Autonomous Navigation & Nhan Dien Vat The Voi YOLO
 
-Du an thuc hien mo phong robot **TurtleBot 4** trong moi truong **Ignition Gazebo**, xay dung ban do 2D bang **SLAM Toolbox**, dinh vi robot bang **AMCL** va dieu huong tu dong khong va cham bang **Nav2** tren **ROS 2 Humble**. Mac dinh repository dung world **depot** vi nhe hon **maze**.
+Su dung lai ban do `maps/map.yaml` + `maps/map.pgm` da quet o bai 04 (world **maze** cua TurtleBot 4) de:
 
+1. Dinh vi TurtleBot 4 bang **AMCL** trong Ignition Gazebo.
+2. Viet node **`goal_navigator`** (Python, `nav2_simple_commander`) tu dong gui robot qua 4 goal bang action `/navigate_to_pose`.
+3. Viet node **`yolo_detector`** nhan anh camera OAK-D `/oakd/rgb/preview/image_raw`, chuyen sang OpenCV bang `cv_bridge`, nhan dien bang **YOLOv8n** (ultralytics), ve bounding box va in ket qua ra terminal.
+
+> Huong dan bai 04 (SLAM, luu map) nam o [readme_tuan04.md](./readme_tuan04.md).
+> Luu y: ban do trong `maps/` duoc quet trong world **maze** (20 x 20 m), khong phai depot.
 
 ---
 
@@ -9,311 +15,179 @@ Du an thuc hien mo phong robot **TurtleBot 4** trong moi truong **Ignition Gazeb
 
 ```text
 tb4_maps/
-├── package.xml
-├── setup.py
-├── setup.cfg
-├── resource/
-│   └── tb4_maps
-├── maps/
-│   ├── map.yaml              # Cau hinh OccupancyGrid: image, resolution, origin, thresholds
-│   └── map.pgm               # Anh raster 2D cua ban do da tao bang SLAM
+├── package.xml / setup.py / setup.cfg
+├── tb4_maps/
+│   ├── goal_navigator.py        # Node dieu huong qua cac goal (Phan 3)
+│   └── yolo_detector.py         # Node nhan dien vat the YOLO (Phan 4)
 ├── launch/
-│   ├── tb4_simulation.launch.py
-│   ├── tb4_slam.launch.py
-│   └── tb4_nav2.launch.py
-├── scripts/
-│   ├── run_mapping.md
-│   └── run_navigation.md
-├── report/
-│   ├── Bao_cao_Thuc_hanh_04.md
-│   └── Bao_cao_Thuc_hanh_04.pdf
-└── readme.md
+│   ├── tb4_week5_sim.launch.py  # Gazebo + robot + map_server/AMCL + Nav2 + RViz2 (Phan 1)
+│   ├── tb4_week5_apps.launch.py # yolo_detector + goal_navigator (Phan 3, 4)
+│   └── tb4_*.launch.py          # launch cua bai 04
+├── config/
+│   ├── goals.yaml               # Toa do initial pose va cac goal (Phan 2)
+│   ├── yolo.yaml                # Tham so YOLO (topic, model, confidence...)
+│   └── tb4_week5.rviz           # RViz2: map, laser, costmap, plan, marker goal, anh YOLO
+├── worlds/
+│   └── maze_objects.sdf         # World maze + nguoi, ghe, ban de YOLO nhan dien
+└── maps/
+    ├── map.yaml
+    └── map.pgm
 ```
-
 
 ---
 
-## Yeu Cau He Thong
+## Cai Dat
 
-- **He dieu hanh:** Ubuntu 22.04 LTS native hoac WSL2 + Ubuntu 22.04 co GUI support.
-- **ROS:** ROS 2 Humble Desktop.
-- **Simulator:** TurtleBot 4 Simulator voi Ignition Gazebo.
-- **Cac goi can dung:** TurtleBot 4 simulator, TurtleBot 4 navigation, SLAM Toolbox, Nav2 va teleop.
-
-### Cai Dat Phu Thuoc
+Yeu cau: Ubuntu 22.04, ROS 2 Humble, TurtleBot 4 Simulator (Ignition Gazebo Fortress).
 
 ```bash
 sudo apt update
-sudo apt install -y \
-  ros-humble-desktop \
-  ros-humble-turtlebot4-simulator \
-  ros-humble-turtlebot4-desktop \
-  ros-humble-turtlebot4-navigation \
-  ros-humble-slam-toolbox \
-  ros-humble-nav2-bringup \
-  ros-humble-teleop-twist-keyboard
+sudo apt install -y ros-humble-turtlebot4-simulator ros-humble-turtlebot4-navigation \
+  ros-humble-nav2-simple-commander ros-humble-cv-bridge
+
+# CPU-only torch (nhe hon nhieu so voi ban CUDA mac dinh)
+pip install --user torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install --user ultralytics "numpy<2" "opencv-python<4.12"
 ```
 
-Nap moi truong ROS trong moi terminal:
+**Luu y tuong thich (quan trong):**
+
+- `numpy<2`: `cv_bridge` cua ROS Humble duoc build voi NumPy 1.x, NumPy 2 se lam no loi khi import.
+  `opencv-python>=4.12` bat buoc NumPy 2 nen phai ghim `<4.12`.
+- torch keo theo `setuptools>=77` vao `~/.local`, ban nay lam `colcon build` package Python bi loi
+  `canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'`. Neu gap, go no di
+  de dung lai setuptools cua he thong:
+
+  ```bash
+  pip uninstall -y setuptools   # chi go ban trong ~/.local
+  ```
+
+### Build
 
 ```bash
+cd /home/aionia/tb4_maps
 source /opt/ros/humble/setup.bash
-```
-
-```bash
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-```
-
-### Build Package Trong Repository
-
-Dat repository trong workspace ROS 2, vi du:
-
-```bash
-mkdir -p ~/tb4_ws/src
-cp -r /home/aionia/tb4_maps ~/tb4_ws/src/tb4_maps
-cd ~/tb4_ws
 colcon build --packages-select tb4_maps
 source install/setup.bash
 ```
-## Phan 1 - Chay TurtleBot 4 Simulation
-
-Mo terminal 1 va khoi chay TurtleBot 4 trong world depot kem RViz2:
-
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py world:=depot rviz:=true gazebo:=ignition
-```
-
-Ket qua can quan sat:
-
-- Gazebo hien thi robot TurtleBot 4 trong moi truong depot.
-- RViz2 hien thi robot model, du lieu LiDAR va cac frame TF.
-- Cac topic co ban `/scan`, `/odom`, `/cmd_vel` ton tai va hoat dong.
-
-### Kiem Tra Topic Co Ban
-
-Mo terminal 2:
-
-```bash
-source /opt/ros/humble/setup.bash
-ros2 topic list
-```
-
-Kiem tra du lieu LiDAR:
-
-```bash
-ros2 topic echo /scan --once
-ros2 topic hz /scan
-```
-
-Kiem tra odometry:
-
-```bash
-ros2 topic echo /odom --once
-ros2 topic hz /odom
-```
-
-Kiem tra robot nhan lenh van toc qua `/cmd_vel`:
-
-```bash
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
-```
-
-Dung robot:
-
-```bash
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
-
-```bash
-ros2 launch tb4_maps tb4_simulation.launch.py
-```
----
-
-## Phan 2 - Xay Dung Ban Do Bang SLAM Toolbox
-
-Giu Gazebo dang chay. Mo terminal 3 va khoi chay SLAM Toolbox:
-
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_navigation slam.launch.py
-```
-
-Hoac chay simulation kem SLAM bang launch file cua repository:
-
-```bash
-ros2 launch tb4_maps tb4_slam.launch.py
-```
-
-Mac dinh lenh tren dung `depot`. Neu muon quay lai maze:
-
-```bash
-ros2 launch tb4_maps tb4_slam.launch.py sim_world:=maze
-```
-
-Mo terminal 4 de dieu khien robot bang ban phim:
-
-```bash
-source /opt/ros/humble/setup.bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-
-Trong qua trinh mapping:
-
-- Dieu khien robot di cham, uu tien toc do thang khoang `0.15 - 0.2 m/s`.
-- Quay dau va re cua tu tu de giam loi scan matching.
-- Di qua phan lon cac hanh lang va khu vuc robot co the di chuyen.
-- Theo doi map tren RViz2, dam bao tuong va vat can khong bi nhan doi hoac lech ro ret.
-
-### Luu Ban Do
-
-Sau khi ban do on dinh, luu map bang `map_saver_cli`:
-
-```bash
-mkdir -p ~/tb4_ws/maps
-cd ~/tb4_ws/maps
-ros2 run nav2_map_server map_saver_cli -f map
-```
-
-Lenh tren tao ra:
-
-```text
-map.yaml
-map.pgm
-```
-
-Copy map vao repository:
-
-```bash
-mkdir -p /home/aionia/tb4_maps/maps
-cp ~/tb4_ws/maps/map.yaml /home/aionia/tb4_maps/maps/map.yaml
-cp ~/tb4_ws/maps/map.pgm /home/aionia/tb4_maps/maps/map.pgm
-```
-
-Kiem tra file map:
-
-```bash
-ls -lh /home/aionia/tb4_maps/maps
-cat /home/aionia/tb4_maps/maps/map.yaml
-```
-
-Neu muon xem rieng checklist mapping, doc [scripts/run_mapping.md](./scripts/run_mapping.md).
 
 ---
 
-## Phan 3 - Localization Bang AMCL
+## Phan 1 - Simulation, Load Ban Do Va Localization (AMCL)
 
-Sau khi mapping xong:
-
-1. Dung SLAM Toolbox va teleop bang `Ctrl + C`.
-2. Khoi dong lai robot trong cung world da dung khi mapping neu can thiet.
-3. Load ban do da tao va chay Nav2 localization.
-
-Khoi chay Nav2 voi map trong repository:
+Terminal 1:
 
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py \
-  world:=depot rviz:=true gazebo:=ignition localization:=true nav2:=true \
-  map:=/home/aionia/tb4_maps/maps/map.yaml
+cd /home/aionia/tb4_maps && source install/setup.bash
+ros2 launch tb4_maps tb4_week5_sim.launch.py
 ```
 
-Neu da build package `tb4_maps`, co the dung:
+Launch nay:
 
-```bash
-ros2 launch tb4_maps tb4_nav2.launch.py map:=/home/aionia/tb4_maps/maps/map.yaml
-```
+- Mo Ignition Gazebo voi world `maze_objects` (= world `maze` da dung de quet map + 8 vat the: 4 nguoi, 3 ghe, 1 ban).
+  Cac model lay tu Gazebo Fuel (da cache san trong `~/.ignition/fuel` khi chay world warehouse).
+- Spawn TurtleBot 4 (standard, dang o dock) tai goc world `(0, 0, 0)`.
+- Chay `map_server` (nap `maps/map.yaml`) + `amcl` (localization) va Nav2.
+- Mo RViz2 voi config `config/tb4_week5.rviz`.
 
-Neu map duoc tao bang `maze` hoac `warehouse`, phai chay lai dung world do:
+Tuy chon:
 
-```bash
-ros2 launch tb4_maps tb4_nav2.launch.py sim_world:=maze map:=/home/aionia/tb4_maps/maps/map.yaml
-```
-
-Thiet lap vi tri ban dau tren RViz2:
-
-1. Chon cong cu **2D Pose Estimate**.
-2. Click va keo mui ten tai vi tri robot dang dung trong Gazebo.
-3. Dieu chinh huong mui ten trung voi huong robot thuc te.
-4. Kiem tra cac tia laser `/scan` trung voi tuong tren ban do.
-
-Neu laser scan khop voi map va robot pose on dinh, localization bang AMCL da thanh cong.
-
-
-## Phan 3 - Navigation Tu Dong Voi Nav2
-
-Khi localization da dung:
-
-1. Tren RViz2, chon cong cu **Nav2 Goal**.
-2. Dat goal thu nhat tai mot khu vuc trong world da map.
-3. Quan sat global path, local costmap va robot di chuyen.
-4. Lap lai voi it nhat 03 goal o cac khu vuc khac nhau.
-5. Sau khi dat goal, khong dieu khien robot thu cong bang teleop.
-
-Ket qua dat yeu cau khi robot:
-
-- Tu lap ke hoach duong di tu vi tri hien tai den goal.
-- Di theo duong da lap ke hoach.
-- Tranh tuong va vat can trong world.
-- Den duoc it nhat 03 goal khac nhau khong va cham.
-
-Huong dan ngan gon cho buoc localization/Nav2 nam trong [scripts/run_navigation.md](./scripts/run_navigation.md).
-
----
-
-## Cac Node, Package Va Topic Chinh
-
-| Thanh phan | Package / Node chinh | Vai tro |
+| Tham so | Mac dinh | Y nghia |
 | :--- | :--- | :--- |
-| Simulation | `turtlebot4_ignition_bringup` | Khoi chay TurtleBot 4 trong Ignition Gazebo va bridge du lieu sang ROS 2 |
-| Sensor LiDAR | Simulation plugin / LiDAR driver | Publish du lieu quet laser len topic `/scan` |
-| Odometry | `irobot_create_control` / simulation control | Publish uoc luong chuyen dong robot len `/odom` |
-| Velocity command | `/cmd_vel` | Nhan lenh van toc tu teleop hoac Nav2 controller |
-| Mapping | `slam_toolbox` | Tao OccupancyGrid `/map` tu `/scan`, `/odom` va TF |
-| Map server | `nav2_map_server` | Load file `map.yaml` va publish static map |
-| Localization | `nav2_amcl` | Uoc luong pose robot tren map bang Adaptive Monte Carlo Localization |
-| Planner | `nav2_navfn_planner` | Lap duong di toan cuc tu start den goal |
-| Costmap | `nav2_costmap_2d` | Tao global/local costmap de bieu dien vat can va vung an toan |
-| Controller | `nav2_dwb_controller` | Sinh lenh `/cmd_vel` de robot bam duong va tranh va cham |
-| Behavior Tree | `nav2_bt_navigator` | Quan ly quy trinh navigation tu khi nhan goal den khi hoan thanh |
+| `world` | `maze_objects` | `maze` = world goc khong co vat the |
+| `map` | `maps/map.yaml` | Ban do da quet |
+| `max_speed` | `0.3` | Van toc thang toi da cua Nav2 (m/s). TurtleBot 4 goc: 0.26; Create 3 gioi han ~0.306 |
+| `max_turn` | `1.9` | Van toc quay toi da (rad/s). TurtleBot 4 goc: 1.0 |
+| `gui` | `true` | `false` = khong mo cua so Gazebo, mo phong nhanh hon (RViz2 + YOLO van hien) |
+| `rviz` | `true` | Mo RViz2 |
+| `lidar_ogre2` | `true` | Sua loi LiDAR (xem duoi) |
 
-### Cac Topic Quan Trong
+Vi du chay nhanh nhat: `ros2 launch tb4_maps tb4_week5_sim.launch.py gui:=false`
 
-| Topic | Kieu du lieu | Y nghia |
-| :--- | :--- | :--- |
-| `/scan` | `sensor_msgs/msg/LaserScan` | Du lieu LiDAR 2D dung cho SLAM, AMCL va costmap |
-| `/odom` | `nav_msgs/msg/Odometry` | Odometry cua robot |
-| `/cmd_vel` | `geometry_msgs/msg/Twist` | Lenh van toc dieu khien robot |
-| `/map` | `nav_msgs/msg/OccupancyGrid` | Ban do dang luoi occupancy |
-| `/tf`, `/tf_static` | `tf2_msgs/msg/TFMessage` | Cay bien doi toa do giua `map`, `odom`, `base_link`, sensor |
-| `/amcl_pose` | `geometry_msgs/msg/PoseWithCovarianceStamped` | Pose robot do AMCL uoc luong |
-| `/plan` | `nav_msgs/msg/Path` | Duong di toan cuc do planner tao ra |
+**Loi LiDAR (Ogre1) tren GPU Intel/Mesa:** plugin Sensors cua Create 3 dung render engine `ogre`; voi GPU Intel UHD +
+Mesa 23, moi tia `/scan` deu bang `range_min` (0.164 m) -> AMCL troi, costmap co vat can bao quanh robot, planner bao
+"failed to create plan". Kiem tra: `ros2 topic echo /scan --once` thay toan `0.164`.
+Launch tu tao overlay `~/.cache/tb4_maps/ogre2_overlay` (ban sao `irobot_create_description` voi
+`<render_engine>ogre2</render_engine>`) va dat len dau `AMENT_PREFIX_PATH` (mac dinh `lidar_ogre2:=true`).
+Cach sua tham khao tu <https://github.com/linhnghu/turtlebot4-nav2-yolo>.
+
+Nen cam sac laptop khi chay: o che do pin (governor `powersave`) real time factor chi ~0.15.
+
+**Initial pose:** robot spawn tai goc world, trung voi goc khi bat dau SLAM, nen pose ban dau trong frame `map` la
+`(0, 0, 0)`. Launch sinh file tham so AMCL (`~/.cache/tb4_maps/localization.yaml`) voi `set_initial_pose: true`
+va `initial_pose` = pose spawn, nen AMCL dinh vi ngay khi khoi dong. Node `goal_navigator` cung publish `/initialpose`
+de du phong. Co the dat thu cong bang **2D Pose Estimate** tren RViz2. Kiem tra localization dung khi cac tia `/scan` (mau do) trung voi tuong tren map va particle cloud hoi tu.
+
+```bash
+ros2 topic echo /amcl_pose --once
+ros2 run tf2_ros tf2_echo map base_link
+```
+
+## Phan 2 - Toa Do Muc Tieu
+
+Lay toa do bang **Publish Point** tren RViz2 + `ros2 topic echo /clicked_point`, hoac `ros2 topic echo /amcl_pose`.
+Cac goal duoc chon o 4 khu vuc khac nhau, cach tuong it nhat 1.5 m (khong nam trong vung inflation 0.45 m),
+va da kiem tra lien thong voi diem xuat phat tren map:
+
+| Goal | Khu vuc | x (m) | y (m) | yaw (do) | Vat the trong tam nhin |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| Goal 1 | Phong phia Dong | 6.0 | -2.0 | 0 | nguoi, ghe |
+| Goal 2 | Goc Dong Nam | 4.4 | -7.4 | -90 | ban, ghe gap |
+| Goal 3 | Khu Tay Nam | -6.1 | -4.1 | 90 | nguoi dang goi dien |
+| Goal 4 | Phong Tay Bac | -7.6 | 7.6 | 45 | nguoi, ghe |
+
+Sua trong `config/goals.yaml` (khong can build lai neu chay voi `goals:=<duong dan>`).
+
+## Phan 3 + 4 - Navigation Tu Dong Va Nhan Dien YOLO
+
+Terminal 2 (sau khi Terminal 1 da in `Managed nodes are active`):
+
+```bash
+cd /home/aionia/tb4_maps && source install/setup.bash
+ros2 launch tb4_maps tb4_week5_apps.launch.py
+```
+
+Hoac chay tung node:
+
+```bash
+ros2 run tb4_maps yolo_detector --ros-args --params-file install/tb4_maps/share/tb4_maps/config/yolo.yaml -p use_sim_time:=true
+ros2 run tb4_maps goal_navigator --ros-args -r __node:=goal_navigator \
+  --params-file install/tb4_maps/share/tb4_maps/config/goals.yaml -p use_sim_time:=true
+```
+
+Ket qua:
+
+- Robot tu undock, lan luot di qua Goal 1 -> 2 -> 3 -> 4, terminal in quang duong con lai/ETA, cuoi cung in tong ket.
+- Cua so OpenCV **YOLO - TurtleBot 4** hien anh camera kem bounding box, ten class, do tu tin, FPS.
+- Terminal in: `Phat hien 2 vat the: person(0.87) @[x1, y1, x2, y2], chair(0.61) @[...]`.
+- RViz2: marker goal (vang = cho, xanh duong = dang di, xanh la = da den), global path, costmap, panel anh YOLO.
+
+Lan dau chay, `yolov8n.pt` (~6 MB) duoc tai ve `~/.cache/tb4_maps/`.
+
+Kiem tra:
+
+```bash
+ros2 action list                 # /navigate_to_pose, /undock, ...
+ros2 topic hz /yolo/image_annotated
+ros2 topic echo /yolo/detections
+```
 
 ---
 
-## Giai Thich Pipeline
+## Node, Topic Va Action Chinh
 
-### Mapping
-
-Trong giai doan mapping, TurtleBot 4 publish du lieu LiDAR tren `/scan` va odometry tren `/odom`. SLAM Toolbox su dung hai nguon du lieu nay cung voi TF de uoc luong quy dao robot, dong thoi ghep cac lan quet laser thanh ban do occupancy grid. Khi robot di qua nhieu khu vuc va quay lai cac diem da thay, SLAM Toolbox co the thuc hien loop closure de giam sai so tich luy.
-
-### Localization
-
-Sau khi da co `map.yaml` va `map.pgm`, Nav2 load ban do bang `map_server`. AMCL nhan `/scan`, map tinh va pose ban dau tu RViz2 de uoc luong vi tri robot. Khi cac tia LiDAR trung voi vat can tren ban do, pose cua robot tren RViz2 phan anh dung vi tri thuc te trong Gazebo.
-
-### Navigation
-
-Khi nguoi dung dat Nav2 Goal, Nav2 planner tao global path tren ban do. Costmap bieu dien tuong, vat can va vung an toan xung quanh robot. Controller DWB tinh lenh van toc phu hop va publish len `/cmd_vel`, giup TurtleBot 4 bam theo duong di, dieu chinh cuc bo va tranh va cham cho den khi den goal.
-
----
-
-
+| Thanh phan | Node | Vao | Ra |
+| :--- | :--- | :--- | :--- |
+| Map server | `map_server` | `maps/map.yaml` | `/map` |
+| Localization | `amcl` | `/scan`, `/map`, `/initialpose`, TF `odom->base_link` | `/amcl_pose`, `/particle_cloud`, TF `map->odom` |
+| Navigation | `bt_navigator` | action `/navigate_to_pose` | goi planner/controller/behavior |
+| Global planner | `planner_server` (NavFn) | global costmap | `/plan` |
+| Local controller | `controller_server` (DWB) | `/plan`, local costmap | `/cmd_vel` |
+| Dieu huong (tu viet) | `goal_navigator` | `config/goals.yaml` | `/initialpose`, action `/undock`, `/navigate_to_pose`, `/goal_markers` |
+| Nhan dien (tu viet) | `yolo_detector` | `/oakd/rgb/preview/image_raw` | `/yolo/image_annotated`, `/yolo/detections`, cua so OpenCV |
 
 ## Tai Lieu Tham Khao
 
-- TurtleBot 4 Simulator: <https://github.com/turtlebot/turtlebot4_simulator>
-- TurtleBot 4 User Manual: <https://turtlebot.github.io/turtlebot4-user-manual/>
-- ROS 2 Humble Documentation: <https://docs.ros.org/en/humble/>
-- Nav2 Documentation: <https://docs.nav2.org/>
-- SLAM Toolbox: <https://github.com/SteveMacenski/slam_toolbox>
+- TurtleBot 4 Navigator: <https://turtlebot.github.io/turtlebot4-user-manual/tutorials/turtlebot4_navigator.html>
+- Nav2 Simple Commander API: <https://docs.nav2.org/commander_api/index.html>
+- Ultralytics YOLO: <https://docs.ultralytics.com/>

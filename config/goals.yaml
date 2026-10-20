@@ -1,0 +1,20 @@
+# Toa do muc tieu trong he toa do `map` (Phan 2).
+# Lay bang RViz2 "Publish Point" + `ros2 topic echo /clicked_point`,
+# hoac lai robot den vi tri roi doc `ros2 topic echo /amcl_pose`.
+# yaw tinh bang do (0 = huong +x cua map, 90 = huong +y).
+goal_navigator:
+  ros__parameters:
+    # Pose ban dau cua robot (robot spawn tai goc world, dang dock)
+    initial_pose: [0.0, 0.0, 0.0]          # x, y, yaw_deg
+    set_initial_pose: true
+    undock_first: true
+
+    goal_names: ["Goal 1 - Phong phia Dong", "Goal 2 - Goc Dong Nam", "Goal 3 - Khu Tay Nam", "Goal 4 - Phong Tay Bac"]
+    goal_x:     [6.0, 4.4, -6.1, -7.6]
+    goal_y:     [-2.0, -7.4, -4.1, 7.6]
+    goal_yaw:   [0.0, -90.0, 90.0, 45.0]
+
+    goal_timeout_sec: 240.0      # Huy goal neu qua thoi gian
+    max_retries: 1               # So lan gui lai neu goal that bai
+    dwell_time_sec: 3.0          # Dung lai o moi goal de camera/YOLO quan sat
+    return_home: false           # true: quay ve initial_pose sau goal cuoi
