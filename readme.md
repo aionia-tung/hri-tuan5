@@ -109,7 +109,6 @@ Mesa 23, moi tia `/scan` deu bang `range_min` (0.164 m) -> AMCL troi, costmap co
 "failed to create plan". Kiem tra: `ros2 topic echo /scan --once` thay toan `0.164`.
 Launch tu tao overlay `~/.cache/tb4_maps/ogre2_overlay` (ban sao `irobot_create_description` voi
 `<render_engine>ogre2</render_engine>`) va dat len dau `AMENT_PREFIX_PATH` (mac dinh `lidar_ogre2:=true`).
-Cach sua tham khao tu <https://github.com/linhnghu/turtlebot4-nav2-yolo>.
 
 Nen cam sac laptop khi chay: o che do pin (governor `powersave`) real time factor chi ~0.15.
 
